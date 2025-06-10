@@ -51,9 +51,9 @@ COPY --from=builder /usr/local/bin /usr/local/bin
 # Copy application code
 COPY backend/ .
 
-# Change ownership to app user
-RUN chown -R appuser:appuser /app
-USER appuser
+# TEMPORARILY RUN AS ROOT FOR DEBUGGING
+# RUN chown -R appuser:appuser /app
+# USER appuser
 
 # Expose port (Railway uses PORT env var)
 EXPOSE 8000
