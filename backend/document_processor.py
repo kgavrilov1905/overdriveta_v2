@@ -9,6 +9,9 @@ from typing import List, Dict, Any, Tuple, Optional
 from datetime import datetime
 import hashlib
 
+# Initialize logger first
+logger = logging.getLogger(__name__)
+
 # Optional imports with fallbacks
 try:
     import fitz  # PyMuPDF
@@ -23,8 +26,6 @@ try:
 except ImportError:
     HAS_PYTHON_PPTX = False
     logger.warning("python-pptx not available. PowerPoint processing will be disabled.")
-
-logger = logging.getLogger(__name__)
 
 class DocumentProcessor:
     """Handles document processing operations."""
