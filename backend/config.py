@@ -33,13 +33,28 @@ class Settings:
         self.similarity_threshold = float(os.getenv('SIMILARITY_THRESHOLD', '0.75'))
         self.max_results = int(os.getenv('MAX_RESULTS', '5'))
         
-        # Log warnings for missing optional configs
+        # Log warnings for missing critical configs
         if not self.gemini_api_key:
             logger.warning("GEMINI_API_KEY not set. AI features will be limited.")
         if not self.supabase_url:
             logger.warning("SUPABASE_URL not set. Database features will be limited.")
         if not self.supabase_key:
             logger.warning("SUPABASE_KEY not set. Database features will be limited.")
+        
+        # Validate critical environment variables for production
+        if self.environment == 'production':
+            missing_vars = []
+            if not self.gemini_api_key:
+                missing_vars.append('GEMINI_API_KEY')
+            if not self.supabase_url:
+                missing_vars.append('SUPABASE_URL')
+            if not self.supabase_key:
+                missing_vars.append('SUPABASE_KEY')
+            
+            if missing_vars:
+                logger.error(f"Missing critical environment variables in production: {', '.join(missing_vars)}")
+            else:
+                logger.info("All critical environment variables are properly configured.")
 
 def get_settings() -> Settings:
     """Get application settings instance."""
