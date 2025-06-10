@@ -30,7 +30,7 @@ interface ChatResponse {
   processing_time: number;
 }
 
-const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8000';
+const BACKEND_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
 const exampleQueries = [
   "What are Alberta's key economic priorities for 2024?",
