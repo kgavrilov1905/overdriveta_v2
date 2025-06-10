@@ -1,13 +1,26 @@
+# Core FastAPI dependencies
 fastapi==0.115.5
 uvicorn[standard]==0.32.1
-python-dotenv==1.0.1
-google-generativeai==0.8.3
-google-cloud-aiplatform==1.38.1
-supabase==2.9.1
-PyMuPDF==1.24.14
-python-pptx==0.6.23
 pydantic==2.10.3
 python-multipart==0.0.18
+
+# Environment and configuration
+python-dotenv==1.0.1
+
+# Google AI services
+google-generativeai==0.8.3
+google-cloud-aiplatform==1.38.1
+
+# Database
+supabase==2.9.1
+
+# Document processing (with more stable versions)
+PyMuPDF==1.23.26
+python-pptx==0.6.23
+
+# HTTP client
 httpx==0.28.1
-numpy==2.2.1
-pandas==2.2.3 
+
+# Data processing (using more stable versions)
+numpy==1.24.3
+pandas==2.0.3 
