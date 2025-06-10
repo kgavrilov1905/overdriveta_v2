@@ -15,16 +15,21 @@ class DatabaseManager:
     
     def __init__(self):
         self.client: Optional[Client] = None
-        self._connect()
+        self._connected = False
     
-    def _connect(self):
-        """Initialize Supabase client connection."""
-        try:
-            self.client = create_client(settings.supabase_url, settings.supabase_key)
-            logger.info("Successfully connected to Supabase")
-        except Exception as e:
-            logger.error(f"Failed to connect to Supabase: {str(e)}")
-            raise
+    def _get_client(self) -> Client:
+        """Get or create the Supabase client."""
+        if not self._connected:
+            if not settings.supabase_url or not settings.supabase_key:
+                raise ValueError("SUPABASE_URL and SUPABASE_KEY environment variables are not set.")
+            try:
+                self.client = create_client(settings.supabase_url, settings.supabase_key)
+                self._connected = True
+                logger.info("Successfully connected to Supabase")
+            except Exception as e:
+                logger.error(f"Failed to connect to Supabase: {str(e)}")
+                raise
+        return self.client
     
     async def initialize_schema(self):
         """Initialize database schema with required tables."""
@@ -113,8 +118,9 @@ class DatabaseManager:
     async def test_connection(self) -> bool:
         """Test database connection."""
         try:
+            client = self._get_client()
             # Simple query to test connection
-            result = self.client.table('documents').select('count').execute()
+            result = client.table('documents').select('count').execute()
             logger.info("Database connection test successful")
             return True
         except Exception as e:
@@ -126,7 +132,8 @@ class DatabaseManager:
     async def insert_document(self, document_data: Dict[str, Any]) -> str:
         """Insert a new document record."""
         try:
-            result = self.client.table('documents').insert(document_data).execute()
+            client = self._get_client()
+            result = client.table('documents').insert(document_data).execute()
             document_id = result.data[0]['id']
             logger.info(f"Document inserted successfully: {document_id}")
             return document_id
@@ -137,7 +144,8 @@ class DatabaseManager:
     async def update_document_status(self, document_id: str, status: str) -> bool:
         """Update document processing status."""
         try:
-            self.client.table('documents').update({
+            client = self._get_client()
+            client.table('documents').update({
                 'processing_status': status,
                 'updated_at': 'NOW()'
             }).eq('id', document_id).execute()
@@ -150,7 +158,8 @@ class DatabaseManager:
     async def get_document(self, document_id: str) -> Optional[Dict[str, Any]]:
         """Get document by ID."""
         try:
-            result = self.client.table('documents').select('*').eq('id', document_id).execute()
+            client = self._get_client()
+            result = client.table('documents').select('*').eq('id', document_id).execute()
             return result.data[0] if result.data else None
         except Exception as e:
             logger.error(f"Failed to get document: {str(e)}")
@@ -161,7 +170,8 @@ class DatabaseManager:
     async def insert_chunks(self, chunks_data: List[Dict[str, Any]]) -> List[str]:
         """Insert multiple text chunks."""
         try:
-            result = self.client.table('chunks').insert(chunks_data).execute()
+            client = self._get_client()
+            result = client.table('chunks').insert(chunks_data).execute()
             chunk_ids = [chunk['id'] for chunk in result.data]
             logger.info(f"Inserted {len(chunk_ids)} chunks successfully")
             return chunk_ids
@@ -172,7 +182,8 @@ class DatabaseManager:
     async def get_chunks_by_document(self, document_id: str) -> List[Dict[str, Any]]:
         """Get all chunks for a document."""
         try:
-            result = self.client.table('chunks').select('*').eq('document_id', document_id).order('chunk_index').execute()
+            client = self._get_client()
+            result = client.table('chunks').select('*').eq('document_id', document_id).order('chunk_index').execute()
             return result.data
         except Exception as e:
             logger.error(f"Failed to get chunks for document: {str(e)}")
@@ -183,7 +194,8 @@ class DatabaseManager:
     async def insert_embeddings(self, embeddings_data: List[Dict[str, Any]]) -> List[str]:
         """Insert multiple embeddings."""
         try:
-            result = self.client.table('embeddings').insert(embeddings_data).execute()
+            client = self._get_client()
+            result = client.table('embeddings').insert(embeddings_data).execute()
             embedding_ids = [embedding['id'] for embedding in result.data]
             logger.info(f"Inserted {len(embedding_ids)} embeddings successfully")
             return embedding_ids
@@ -194,12 +206,13 @@ class DatabaseManager:
     async def similarity_search(self, query_embedding: List[float], limit: int = 5, threshold: float = 0.75) -> List[Dict[str, Any]]:
         """Perform vector similarity search."""
         try:
+            client = self._get_client()
             # Convert list to proper vector format for Supabase
             query_vector = f"[{','.join(map(str, query_embedding))}]"
             
             # Perform similarity search using RPC function
             # Note: This requires a custom function in Supabase
-            result = self.client.rpc('similarity_search', {
+            result = client.rpc('similarity_search', {
                 'query_embedding': query_vector,
                 'match_threshold': threshold,
                 'match_count': limit
@@ -215,17 +228,19 @@ class DatabaseManager:
     async def list_documents(self, limit: int = 100) -> List[Dict[str, Any]]:
         """List all documents."""
         try:
-            result = self.client.table('documents').select('*').order('created_at', desc=True).limit(limit).execute()
+            client = self._get_client()
+            result = client.table('documents').select('*').limit(limit).order('upload_date', desc=True).execute()
             return result.data
         except Exception as e:
             logger.error(f"Failed to list documents: {str(e)}")
             return []
     
     async def delete_document(self, document_id: str) -> bool:
-        """Delete a document and all associated data."""
+        """Delete a document and all its related data."""
         try:
-            self.client.table('documents').delete().eq('id', document_id).execute()
-            logger.info(f"Document deleted: {document_id}")
+            client = self._get_client()
+            client.table('documents').delete().eq('id', document_id).execute()
+            logger.info(f"Document deleted successfully: {document_id}")
             return True
         except Exception as e:
             logger.error(f"Failed to delete document: {str(e)}")

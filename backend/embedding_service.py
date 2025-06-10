@@ -18,16 +18,20 @@ class EmbeddingService:
     def __init__(self):
         self.model_name = "text-embedding-004"
         self.embedding_dimension = 768
-        self._configure_genai()
+        self._configured = False
     
-    def _configure_genai(self):
-        """Configure Google Generative AI with API key."""
-        try:
-            genai.configure(api_key=settings.gemini_api_key)
-            logger.info("Google Generative AI configured successfully")
-        except Exception as e:
-            logger.error(f"Failed to configure Google Generative AI: {str(e)}")
-            raise
+    def _ensure_configured(self):
+        """Configure Google Generative AI if not already configured."""
+        if not self._configured:
+            if not settings.gemini_api_key:
+                raise ValueError("GEMINI_API_KEY environment variable is not set.")
+            try:
+                genai.configure(api_key=settings.gemini_api_key)
+                logger.info("Google Generative AI configured successfully")
+                self._configured = True
+            except Exception as e:
+                logger.error(f"Failed to configure Google Generative AI: {str(e)}")
+                raise
     
     def generate_embedding(self, text: str) -> List[float]:
         """
@@ -40,6 +44,7 @@ class EmbeddingService:
             List of float values representing the embedding
         """
         try:
+            self._ensure_configured()
             if not text.strip():
                 logger.warning("Empty text provided for embedding")
                 return [0.0] * self.embedding_dimension
@@ -78,6 +83,7 @@ class EmbeddingService:
         if not texts:
             return []
         
+        self._ensure_configured()
         embeddings = []
         total_batches = (len(texts) + batch_size - 1) // batch_size
         
@@ -125,6 +131,7 @@ class EmbeddingService:
             List of float values representing the query embedding
         """
         try:
+            self._ensure_configured()
             if not query.strip():
                 raise ValueError("Query cannot be empty")
             
