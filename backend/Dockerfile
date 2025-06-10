@@ -58,5 +58,5 @@ COPY backend/ .
 # Expose port 8080 (Railway's default)
 EXPOSE 8080
 
-# Run the application on port 8080 (Railway's expected port)
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8080"] 
+# Run the application using Railway's PORT environment variable
+CMD uvicorn main:app --host 0.0.0.0 --port $PORT 
