@@ -10,9 +10,9 @@ from fastapi.responses import JSONResponse
 from dotenv import load_dotenv
 import logging
 
-# Import route modules
-from document_routes import router as document_router
-from query_routes import router as query_router
+# Import route modules - TEMPORARILY COMMENTED OUT FOR DEBUGGING
+# from document_routes import router as document_router
+# from query_routes import router as query_router
 
 # Load environment variables
 load_dotenv()
@@ -47,9 +47,9 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Include routers
-app.include_router(document_router)
-app.include_router(query_router)
+# Include routers - TEMPORARILY COMMENTED OUT FOR DEBUGGING
+# app.include_router(document_router)
+# app.include_router(query_router)
 
 @app.get("/")
 async def root():
