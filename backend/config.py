@@ -15,11 +15,11 @@ class Settings(BaseSettings):
     """Application settings loaded from environment variables."""
     
     # Google AI Configuration
-    gemini_api_key: str
+    gemini_api_key: str | None = None
     
     # Supabase Configuration
-    supabase_url: str
-    supabase_key: str
+    supabase_url: str | None = None
+    supabase_key: str | None = None
     
     # Application Configuration
     environment: str = "development"
@@ -40,18 +40,18 @@ class Settings(BaseSettings):
         "case_sensitive": False,
     }
     
-    @field_validator('gemini_api_key', 'supabase_url', 'supabase_key')
+    @field_validator('gemini_api_key', 'supabase_url', 'supabase_key', mode="before", check_fields=False)
     @classmethod
-    def validate_required_fields(cls, v):
+    def warn_missing_fields(cls, v, field):
         if not v:
-            raise ValueError('Field is required')
+            logger.warning(f"Environment variable for '{field.name}' is not set. Some functionality may be limited.")
         return v
     
     @field_validator('supabase_url')
     @classmethod
     def validate_supabase_url(cls, v):
-        if not v.startswith('https://'):
-            raise ValueError('Supabase URL must start with https://')
+        if v and not v.startswith('https://'):
+            logger.warning('Supabase URL should start with https://')
         return v
 
 def get_settings() -> Settings:
