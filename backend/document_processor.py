@@ -4,12 +4,25 @@ Handles PDF and PowerPoint text extraction, content chunking, and document prepr
 """
 
 import logging
-import fitz  # PyMuPDF
-from pptx import Presentation  # python-pptx
 import re
 from typing import List, Dict, Any, Tuple, Optional
 from datetime import datetime
 import hashlib
+
+# Optional imports with fallbacks
+try:
+    import fitz  # PyMuPDF
+    HAS_PYMUPDF = True
+except ImportError:
+    HAS_PYMUPDF = False
+    logger.warning("PyMuPDF not available. PDF processing will be disabled.")
+
+try:
+    from pptx import Presentation  # python-pptx
+    HAS_PYTHON_PPTX = True
+except ImportError:
+    HAS_PYTHON_PPTX = False
+    logger.warning("python-pptx not available. PowerPoint processing will be disabled.")
 
 logger = logging.getLogger(__name__)
 
@@ -30,6 +43,9 @@ class DocumentProcessor:
         Returns:
             Dictionary containing extracted text and metadata
         """
+        if not HAS_PYMUPDF:
+            raise ImportError("PyMuPDF is not installed. PDF processing is not available.")
+        
         try:
             doc = fitz.open(file_path)
             
@@ -96,6 +112,9 @@ class DocumentProcessor:
         Returns:
             Dictionary containing extracted text and metadata
         """
+        if not HAS_PYTHON_PPTX:
+            raise ImportError("python-pptx is not installed. PowerPoint processing is not available.")
+        
         try:
             prs = Presentation(file_path)
             
