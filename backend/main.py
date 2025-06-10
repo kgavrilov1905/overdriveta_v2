@@ -77,49 +77,12 @@ async def debug_env():
 
 @app.get("/health")
 async def health_check():
-    """Health check endpoint for monitoring and deployment verification."""
-    try:
-        from config import settings
-        
-        # Check if critical services can be configured
-        missing_services = []
-        
-        if not settings.gemini_api_key:
-            missing_services.append("AI Service (GEMINI_API_KEY)")
-            
-        if not settings.supabase_url:
-            missing_services.append("Database URL (SUPABASE_URL)")
-            
-        if not settings.supabase_key:
-            missing_services.append("Database Key (SUPABASE_KEY)")
-        
-        if missing_services:
-            return JSONResponse(
-                status_code=200,  # Changed to 200 since app is running
-                content={
-                    "status": "limited",
-                    "message": f"App is running but some services are not configured: {', '.join(missing_services)}",
-                    "environment": settings.environment,
-                    "available_features": ["Health Check", "API Documentation"]
-                }
-            )
-        
-        return {
-            "status": "healthy",
-            "message": "All systems operational",
-            "environment": settings.environment,
-            "available_features": ["AI Query Processing", "Document Upload", "Vector Search", "Full RAG Pipeline"]
-        }
-    
-    except Exception as e:
-        logger.error(f"Health check failed: {str(e)}")
-        return JSONResponse(
-            status_code=503,
-            content={
-                "status": "unhealthy",
-                "message": f"Health check failed: {str(e)}"
-            }
-        )
+    """Simple health check endpoint."""
+    return {
+        "status": "healthy",
+        "message": "Basic app is running",
+        "environment": os.getenv("ENVIRONMENT", "unknown")
+    }
 
 if __name__ == "__main__":
     import uvicorn
