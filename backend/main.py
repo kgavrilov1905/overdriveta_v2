@@ -61,6 +61,20 @@ async def root():
         "docs": "/docs"
     }
 
+@app.get("/debug/env")
+async def debug_env():
+    """Debug endpoint to see environment variables (for troubleshooting only)."""
+    env_vars = {
+        "GEMINI_API_KEY": "SET" if os.getenv("GEMINI_API_KEY") else "NOT SET",
+        "SUPABASE_URL": "SET" if os.getenv("SUPABASE_URL") else "NOT SET", 
+        "SUPABASE_KEY": "SET" if os.getenv("SUPABASE_KEY") else "NOT SET",
+        "ENVIRONMENT": os.getenv("ENVIRONMENT", "NOT SET"),
+        "PORT": os.getenv("PORT", "NOT SET"),
+        "RAILWAY_ENVIRONMENT": os.getenv("RAILWAY_ENVIRONMENT", "NOT SET"),
+        "all_env_vars": list(os.environ.keys())[:10]  # First 10 env vars to see what's available
+    }
+    return env_vars
+
 @app.get("/health")
 async def health_check():
     """Health check endpoint for monitoring and deployment verification."""
