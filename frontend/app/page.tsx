@@ -125,7 +125,7 @@ export default function ChatPage() {
 
   const formatResponseText = (text: string) => {
     // Clean up references and extra formatting
-    let cleanedText = text
+    const cleanedText = text
       .replace(/\([^)]*\.pdf[^)]*\)/gi, '')
       .replace(/\([^)]*\.pptx[^)]*\)/gi, '')
       .replace(/,?\s*p\.\s*\d+[;,.]?/gi, '')
@@ -234,10 +234,10 @@ export default function ChatPage() {
                   <MessageSquare className="w-10 h-10 text-white" />
                 </div>
                 <h2 className="text-2xl font-semibold text-gray-900 mb-3 text-center">
-                  Hello! Ask me about Alberta's economy
+                  Hello! Ask me about Alberta&apos;s economy
                 </h2>
                 <p className="text-gray-500 text-center text-base mb-10 max-w-md leading-relaxed">
-                  I can help you research Alberta's economic policies, business climate, and government initiatives.
+                  I can help you research Alberta&apos;s economic policies, business climate, and government initiatives.
                 </p>
                 
                 {/* Example Questions */}
