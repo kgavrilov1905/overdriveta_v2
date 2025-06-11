@@ -2,7 +2,7 @@ FROM tiangolo/uvicorn-gunicorn-fastapi:python3.11-slim
 
 WORKDIR /app
 
-COPY main_minimal.py main.py
+COPY backend/main_minimal.py main.py
 
 # Railway sets PORT env var, use it
 ENV PORT=8000
