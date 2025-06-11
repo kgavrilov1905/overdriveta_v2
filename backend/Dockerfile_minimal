@@ -2,14 +2,16 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
-# Install only what we need
-RUN pip install fastapi==0.115.5 uvicorn==0.32.1
+# Copy requirements first for better caching
+RUN echo "fastapi==0.115.5" > requirements.txt && \
+    echo "uvicorn==0.32.1" >> requirements.txt
+
+# Install with no cache and upgrade pip efficiently
+RUN pip install --no-cache-dir --upgrade pip && \
+    pip install --no-cache-dir -r requirements.txt
 
 # Copy minimal app
 COPY main_minimal.py main.py
 
-# Expose port
-EXPOSE $PORT
-
-# Run with explicit port from environment
-CMD uvicorn main:app --host 0.0.0.0 --port $PORT 
+# Use Railway's PORT environment variable
+CMD uvicorn main:app --host 0.0.0.0 --port ${PORT:-8000} 
