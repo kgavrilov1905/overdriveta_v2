@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useRef, useEffect } from 'react';
-import { Send, MessageSquare, FileText, Upload, Zap, Search } from 'lucide-react';
+import { Send, MessageSquare, FileText } from 'lucide-react';
 import axios from 'axios';
 import Link from 'next/link';
 
@@ -70,7 +70,6 @@ export default function ChatPage() {
     setIsLoading(true);
 
     try {
-      console.log('Sending request to:', `${BACKEND_URL}/query/`);
       const response = await axios.post<ChatResponse>(`${BACKEND_URL}/query/`, {
         query: inputText,
         max_results: 5,
@@ -124,193 +123,251 @@ export default function ChatPage() {
     inputRef.current?.focus();
   };
 
-  const formatConfidence = (confidence?: number) => {
-    if (!confidence) return '';
-    return `${Math.round(confidence * 100)}%`;
-  };
-
-  const formatProcessingTime = (time?: number) => {
-    if (!time) return '';
-    return `${time.toFixed(2)}s`;
-  };
-
-  // Format response text with better structure
   const formatResponseText = (text: string) => {
-    // Split into paragraphs and format
-    const paragraphs = text.split('\n\n');
-    return paragraphs.map((paragraph, index) => {
-      // Check if it's a bullet point list
-      if (paragraph.includes('•') || paragraph.includes('-') || paragraph.includes('*')) {
-        const lines = paragraph.split('\n');
+    // Clean up references and extra formatting
+    let cleanedText = text
+      .replace(/\([^)]*\.pdf[^)]*\)/gi, '')
+      .replace(/\([^)]*\.pptx[^)]*\)/gi, '')
+      .replace(/,?\s*p\.\s*\d+[;,.]?/gi, '')
+      .replace(/ACC_Provincial_Priorities_June_2024\.pdf/gi, '')
+      .replace(/Alberta_Economic_Test_Presentation\.pptx/gi, '')
+      .replace(/\s*;\s*/g, '. ')
+      .replace(/\s+/g, ' ')
+      .trim();
+
+    // Split into sections based on markdown headers
+    const sections: Array<{type: 'header' | 'content', text: string}> = [];
+    
+    // Split by potential headers (text surrounded by ** or starting with *)
+    const parts = cleanedText.split(/(?=\*\*[^*]+\*\*)|(?=\*\s*\*\*[^*]+\*\*)/);
+    
+    parts.forEach(part => {
+      const trimmed = part.trim();
+      if (!trimmed) return;
+      
+      // Check if this is a header (starts with ** or * **)
+      const headerMatch = trimmed.match(/^\*?\s*\*\*([^*]+)\*\*\s*\*?\s*([\s\S]*)/);
+      if (headerMatch) {
+        const headerText = headerMatch[1].trim().replace(/[:.]*$/, '');
+        const contentText = headerMatch[2].trim();
+        
+        sections.push({ type: 'header', text: headerText });
+        if (contentText) {
+          sections.push({ type: 'content', text: contentText });
+        }
+      } else {
+        // Regular content - clean up any remaining asterisks
+        const cleanContent = trimmed
+          .replace(/^\*\s*/, '') // Remove leading asterisks
+          .replace(/\*\s*$/, '') // Remove trailing asterisks
+          .replace(/\*\s+/g, '') // Remove asterisks with spaces
+          .trim();
+        
+        if (cleanContent) {
+          sections.push({ type: 'content', text: cleanContent });
+        }
+      }
+    });
+
+    return sections.map((section, index) => {
+      if (section.type === 'header') {
+        return (
+          <h3 key={index} className="font-semibold text-gray-900 mb-3 mt-5 text-base first:mt-0">
+            {section.text}
+          </h3>
+        );
+      } else {
+        // Break content into bullet points (1-2 sentences each)
+        const sentences = section.text.split(/(?<=[.!?])\s+/);
+        const bulletPoints: string[] = [];
+        
+        for (let i = 0; i < sentences.length; i += 2) {
+          const chunk = sentences.slice(i, i + 2).join(' ').trim();
+          if (chunk) {
+            bulletPoints.push(chunk);
+          }
+        }
+        
         return (
           <div key={index} className="mb-4">
-            {lines.map((line, lineIndex) => {
-              if (line.trim().startsWith('•') || line.trim().startsWith('-') || line.trim().startsWith('*')) {
-                return (
-                  <div key={lineIndex} className="flex items-start gap-2 mb-2">
-                    <span className="text-blue-400 mt-1">•</span>
-                    <span>{line.replace(/^[•\-*]\s*/, '').trim()}</span>
-                  </div>
-                );
-              }
-              return line.trim() ? <p key={lineIndex} className="mb-2 font-medium">{line}</p> : null;
-            })}
+            {bulletPoints.map((point, pointIndex) => (
+              <div key={pointIndex} className="flex items-start gap-3 mb-3">
+                <span className="text-blue-500 mt-1.5 text-xs flex-shrink-0">•</span>
+                <span className="text-sm leading-relaxed text-gray-700">{point}</span>
+              </div>
+            ))}
           </div>
         );
       }
-      // Regular paragraph
-      return paragraph.trim() ? <p key={index} className="mb-4 leading-relaxed">{paragraph}</p> : null;
     });
   };
 
   return (
-    <div className="min-h-screen flex flex-col">
-      {/* Clean Header */}
-      <header className="glass border-b border-white/10 px-6 py-6">
+    <div className="h-screen flex flex-col bg-gray-50">
+      {/* iOS-style Header */}
+      <div className="bg-white border-b border-gray-200 px-4 py-4 safe-area-top">
         <div className="max-w-4xl mx-auto flex items-center justify-between">
-          <div className="flex items-center gap-4">
-            <div className="w-10 h-10 bg-gradient-to-r from-blue-500 to-purple-600 rounded-xl flex items-center justify-center">
-              <MessageSquare className="w-5 h-5 text-white" />
+          <div className="flex items-center gap-3">
+            <div className="w-8 h-8 bg-blue-500 rounded-full flex items-center justify-center">
+              <MessageSquare className="w-4 h-4 text-white" />
             </div>
             <div>
-              <h1 className="text-xl font-bold gradient-text">Alberta Perspectives RAG</h1>
-              <p className="text-sm opacity-70">AI-powered research assistant for Alberta economic insights</p>
+              <h1 className="text-lg font-semibold text-gray-900">Alberta Assistant</h1>
+              <p className="text-xs text-gray-500">Economic Research AI</p>
             </div>
           </div>
-          <div className="flex items-center gap-4">
-            <Link href="/upload" className="text-sm opacity-70 hover:opacity-100 transition-opacity">
-              <Upload className="w-4 h-4 inline mr-1" />
-              Upload
-            </Link>
-            <div className="text-xs opacity-50 flex items-center gap-1">
-              <Zap className="w-3 h-3" />
-              Gemini 2.0
-            </div>
-          </div>
+          <Link href="/upload" className="text-blue-500 text-sm font-medium hover:text-blue-600">
+            Upload
+          </Link>
         </div>
-      </header>
+      </div>
 
-      {/* Chat Area */}
-      <div className="flex-1 overflow-hidden flex flex-col">
-        <div className="flex-1 overflow-y-auto px-6 py-8">
-          <div className="max-w-4xl mx-auto">
+      {/* Messages Container */}
+      <div className="flex-1 overflow-hidden">
+        <div className="h-full overflow-y-auto">
+          <div className="max-w-4xl mx-auto px-4 py-4">
             
-            {/* Suggestion Cards - Only when no messages */}
+            {/* Welcome State */}
             {messages.length === 0 && (
-              <div className="py-8">
-                <p className="text-center text-sm opacity-70 mb-6">Try one of these questions to get started:</p>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-3 max-w-3xl mx-auto">
+              <div className="flex flex-col items-center justify-center min-h-full py-12">
+                <div className="w-20 h-20 bg-blue-500 rounded-full flex items-center justify-center mb-6 shadow-lg">
+                  <MessageSquare className="w-10 h-10 text-white" />
+                </div>
+                <h2 className="text-2xl font-semibold text-gray-900 mb-3 text-center">
+                  Hello! Ask me about Alberta's economy
+                </h2>
+                <p className="text-gray-500 text-center text-base mb-10 max-w-md leading-relaxed">
+                  I can help you research Alberta's economic policies, business climate, and government initiatives.
+                </p>
+                
+                {/* Example Questions */}
+                <div className="w-full max-w-md space-y-3">
                   {exampleQueries.map((query, index) => (
                     <button
                       key={index}
                       onClick={() => handleExampleClick(query)}
-                      className="glass rounded-xl p-4 text-left hover:shadow-lg transition-all duration-200 group border border-white/10"
+                      className="w-full bg-white rounded-2xl p-4 text-left border border-gray-200 shadow-sm hover:shadow-md hover:border-blue-300 transition-all duration-200 text-sm text-gray-700 leading-relaxed btn-press"
                     >
-                      <div className="flex items-start gap-3">
-                        <Search className="w-4 h-4 text-blue-500 group-hover:text-purple-600 transition-colors flex-shrink-0 mt-0.5" />
-                        <span className="text-sm leading-relaxed opacity-80 group-hover:opacity-100 transition-opacity">
-                          {query}
-                        </span>
-                      </div>
+                      {query}
                     </button>
                   ))}
                 </div>
               </div>
             )}
 
-            {/* Messages with More Spacing */}
-            <div className="space-y-8">
-              {messages.map((message) => (
-                <div key={message.id} className={`flex ${message.isUser ? 'justify-end' : 'justify-start'}`}>
-                  <div className={`max-w-3xl ${message.isUser ? 'ml-12' : 'mr-12'}`}>
-                    <div className={message.isUser ? 'chat-bubble-user' : 'chat-bubble-assistant'}>
+            {/* Message Thread */}
+            {messages.length > 0 && (
+              <div className="space-y-6 pt-2">
+                {messages.map((message) => (
+                  <div key={message.id} className={`flex ${message.isUser ? 'justify-end' : 'justify-start'}`}>
+                    <div className={`max-w-lg lg:max-w-3xl ${message.isUser ? 'user-message' : 'assistant-message'}`}>
                       {message.isUser ? (
-                        <p className="leading-relaxed">{message.text}</p>
+                        // User Message Bubble
+                        <div className="bg-blue-500 text-white rounded-2xl rounded-br-lg px-4 py-3 shadow-md">
+                          <p className="text-sm leading-relaxed">{message.text}</p>
+                        </div>
                       ) : (
-                        <div className="space-y-2">
-                          {formatResponseText(message.text)}
-                        </div>
-                      )}
-                      
-                      {!message.isUser && message.sources && message.sources.length > 0 && (
-                        <div className="mt-6 pt-4 border-t border-white/20">
-                          <div className="text-xs opacity-70 mb-3">
-                            <FileText className="w-3 h-3 inline mr-1" />
-                            Sources ({message.sources.length})
+                        // Assistant Message Bubble
+                        <div className="bg-white rounded-2xl rounded-bl-lg px-6 py-5 shadow-md border border-gray-100">
+                          <div className="text-gray-900">
+                            {formatResponseText(message.text)}
                           </div>
-                          {message.sources.slice(0, 2).map((source, idx) => (
-                            <div key={idx} className="text-xs opacity-60 mb-2 pl-2 border-l-2 border-blue-400/30">
-                              {source.document_name} ({Math.round(source.similarity_score * 100)}% match)
+                          
+                          {/* Sources */}
+                          {message.sources && message.sources.length > 0 && (
+                            <div className="mt-5 pt-4 border-t border-gray-100">
+                              <div className="flex items-center gap-1 text-xs text-gray-500 mb-2">
+                                <FileText className="w-3 h-3" />
+                                <span>Sources</span>
+                              </div>
+                              {message.sources.slice(0, 2).map((source, idx) => (
+                                <div key={idx} className="text-xs text-gray-400 mb-1">
+                                  {source.document_name} ({Math.round(source.similarity_score * 100)}%)
+                                </div>
+                              ))}
                             </div>
-                          ))}
+                          )}
                         </div>
                       )}
                       
-                      {!message.isUser && (message.confidence || message.processingTime) && (
-                        <div className="mt-3 text-xs opacity-50 flex gap-4">
-                          {message.confidence && (
-                            <span>Confidence: {formatConfidence(message.confidence)}</span>
-                          )}
-                          {message.processingTime && (
-                            <span>{formatProcessingTime(message.processingTime)}s</span>
-                          )}
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                </div>
-              ))}
-
-              {isLoading && (
-                <div className="flex justify-start">
-                  <div className="max-w-3xl mr-12">
-                    <div className="chat-bubble-assistant">
-                      <div className="typing-indicator">
-                        <div className="typing-dot"></div>
-                        <div className="typing-dot"></div>
-                        <div className="typing-dot"></div>
-                        <span className="ml-3 text-sm opacity-70">Thinking...</span>
+                      {/* Timestamp */}
+                      <div className={`mt-1 text-xs text-gray-400 ${message.isUser ? 'text-right' : 'text-left'}`}>
+                        {message.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                        {!message.isUser && message.confidence && (
+                          <span className="ml-2">• {Math.round(message.confidence * 100)}% confident</span>
+                        )}
                       </div>
                     </div>
                   </div>
-                </div>
-              )}
+                ))}
 
-              <div ref={messagesEndRef} />
-            </div>
+                {/* Typing Indicator */}
+                {isLoading && (
+                  <div className="flex justify-start">
+                    <div className="max-w-lg lg:max-w-3xl assistant-message">
+                      <div className="bg-white rounded-2xl rounded-bl-lg px-4 py-3 shadow-md border border-gray-100">
+                        <div className="flex items-center gap-2">
+                          <div className="flex gap-1">
+                            <div className="w-2 h-2 bg-gray-400 rounded-full typing-dot"></div>
+                            <div className="w-2 h-2 bg-gray-400 rounded-full typing-dot"></div>
+                            <div className="w-2 h-2 bg-gray-400 rounded-full typing-dot"></div>
+                          </div>
+                          <span className="text-xs text-gray-500">Thinking...</span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                <div ref={messagesEndRef} />
+              </div>
+            )}
           </div>
         </div>
+      </div>
 
-        {/* Large Chat Input */}
-        <div className="border-t border-white/10 p-6">
-          <div className="max-w-4xl mx-auto">
-            <form onSubmit={handleSubmit} className="flex gap-4">
-              <div className="flex-1">
-                <textarea
-                  ref={inputRef}
-                  value={inputText}
-                  onChange={(e) => setInputText(e.target.value)}
-                  placeholder="Ask about Alberta's economy, policies, or business climate..."
-                  className="input-modern w-full text-lg resize-none"
-                  rows={3}
-                  disabled={isLoading}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' && !e.shiftKey) {
-                      e.preventDefault();
-                      handleSubmit(e);
-                    }
-                  }}
-                />
-              </div>
-              <button
-                type="submit"
-                disabled={!inputText.trim() || isLoading}
-                className="btn-primary self-end h-fit px-6 py-3"
-              >
-                <Send className="w-5 h-5" />
-              </button>
-            </form>
-          </div>
+      {/* iOS Messages-style Input */}
+      <div className="bg-white border-t border-gray-200 px-4 py-3 safe-area-bottom">
+        <div className="max-w-4xl mx-auto">
+          <form onSubmit={handleSubmit} className="flex items-end gap-3">
+            <div className="flex-1 min-h-10 bg-gray-100 rounded-full px-4 py-2 flex items-center">
+              <textarea
+                ref={inputRef}
+                value={inputText}
+                onChange={(e) => setInputText(e.target.value)}
+                placeholder="Ask about Alberta..."
+                className="flex-1 bg-transparent text-sm resize-none outline-none placeholder-gray-500 max-h-20 leading-relaxed"
+                rows={1}
+                disabled={isLoading}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault();
+                    handleSubmit(e);
+                  }
+                }}
+                style={{
+                  height: 'auto',
+                  minHeight: '20px'
+                }}
+                onInput={(e) => {
+                  const target = e.target as HTMLTextAreaElement;
+                  target.style.height = 'auto';
+                  target.style.height = Math.min(target.scrollHeight, 80) + 'px';
+                }}
+              />
+            </div>
+            <button
+              type="submit"
+              disabled={!inputText.trim() || isLoading}
+              className={`w-8 h-8 rounded-full flex items-center justify-center transition-all duration-200 btn-press ${
+                inputText.trim() && !isLoading
+                  ? 'bg-blue-500 text-white shadow-md hover:bg-blue-600'
+                  : 'bg-gray-300 text-gray-500 cursor-not-allowed'
+              }`}
+            >
+              <Send className="w-4 h-4" />
+            </button>
+          </form>
         </div>
       </div>
     </div>

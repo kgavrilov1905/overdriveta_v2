@@ -4,6 +4,7 @@ Main FastAPI application for processing economic research documents and providin
 """
 
 import os
+import time
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -13,6 +14,7 @@ import logging
 # Import route modules
 from document_routes import router as document_router
 from query_routes import router as query_router
+from advanced_routes import router as advanced_router
 
 # Load environment variables
 load_dotenv()
@@ -33,15 +35,22 @@ app = FastAPI(
     redoc_url="/redoc"
 )
 
-# Configure CORS for frontend integration
-cors_origins = os.getenv("CORS_ORIGINS", '["http://localhost:3000"]')
-if isinstance(cors_origins, str):
-    import json
-    cors_origins = json.loads(cors_origins)
+# Configure security middleware
+from security_middleware import SecurityMiddleware, validate_environment_security
+
+# Add security middleware
+app.add_middleware(
+    SecurityMiddleware,
+    rate_limit_requests=100,  # 100 requests per hour per IP
+    rate_limit_window=3600    # 1 hour window
+)
+
+# Configure CORS for frontend integration  
+cors_origins = ["http://localhost:3000", "https://overdriveta-v2.vercel.app"]
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=cors_origins,  # Use only the configured origins
+    allow_origins=cors_origins,  # Use only specific origins
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "DELETE"],
     allow_headers=["*"],
@@ -50,6 +59,7 @@ app.add_middleware(
 # Include routers
 app.include_router(document_router)
 app.include_router(query_router)
+app.include_router(advanced_router)
 
 @app.get("/")
 async def root():
@@ -118,6 +128,42 @@ async def health_check():
             content={
                 "status": "unhealthy",
                 "message": f"Health check failed: {str(e)}"
+            }
+        )
+
+@app.get("/security/status")
+async def security_status():
+    """Security configuration and status endpoint."""
+    try:
+        # Validate security configuration
+        security_check = validate_environment_security()
+        
+        # Get LLM service status
+        from llm_service import llm_service
+        llm_status = llm_service.get_model_status()
+        
+        # Get database connection status
+        from security_middleware import db_connection_manager
+        db_status = {
+            "connection_failures": db_connection_manager.connection_failures,
+            "circuit_breaker_active": db_connection_manager.should_circuit_break(),
+            "last_failure": db_connection_manager.last_failure_time
+        }
+        
+        return {
+            "security_configuration": security_check,
+            "llm_service": llm_status,
+            "database_health": db_status,
+            "timestamp": time.time()
+        }
+        
+    except Exception as e:
+        logger.error(f"Security status check failed: {str(e)}")
+        return JSONResponse(
+            status_code=500,
+            content={
+                "status": "error",
+                "message": f"Security status check failed: {str(e)}"
             }
         )
 

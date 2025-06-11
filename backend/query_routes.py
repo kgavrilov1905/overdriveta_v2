@@ -1,44 +1,79 @@
 """
-Query processing routes for Alberta Perspectives RAG API
-Handles chat queries, search testing, and system monitoring endpoints.
+Enhanced query processing routes with security and validation
+Handles chat queries, search testing, and system monitoring endpoints with comprehensive validation.
 """
 
 import logging
 from typing import Dict, Any, List
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import JSONResponse
 
 from models import QueryRequest, QueryResponse, SearchResult
 from rag_service import rag_service
+from security_middleware import input_validator, db_connection_manager
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/query", tags=["query"])
 
 @router.post("/", response_model=QueryResponse)
-async def process_query(request: QueryRequest):
+async def process_query(request: QueryRequest, http_request: Request):
     """
-    Process a user query through the RAG pipeline.
+    Process a user query through the RAG pipeline with enhanced validation.
     
     Args:
         request: Query request with user input and optional parameters
+        http_request: FastAPI request object for security logging
         
     Returns:
         Generated response with sources and metadata
     """
     try:
-        logger.info(f"Received query request: '{request.query[:100]}...'")
+        # Enhanced logging with client information
+        client_ip = http_request.headers.get("X-Forwarded-For", http_request.client.host if http_request.client else "unknown")
+        logger.info(f"Query from {client_ip}: '{request.query[:100]}...'")
         
-        if not request.query.strip():
+        # Comprehensive input validation
+        if not request.query or not request.query.strip():
             raise HTTPException(
                 status_code=400,
                 detail="Query cannot be empty"
             )
         
-        response = await rag_service.process_query(request)
+        # Validate and sanitize query using security middleware
+        try:
+            sanitized_query = input_validator.sanitize_query(request.query)
+            request.query = sanitized_query
+        except ValueError as e:
+            logger.warning(f"Query validation failed: {str(e)}")
+            raise HTTPException(
+                status_code=400,
+                detail=f"Invalid query: {str(e)}"
+            )
         
-        logger.info(f"Query processed successfully, confidence: {response.confidence_score:.3f}")
-        return response
+        # Check for database connection issues
+        if db_connection_manager.should_circuit_break():
+            logger.error("Database circuit breaker activated")
+            raise HTTPException(
+                status_code=503,
+                detail="Service temporarily unavailable due to database issues. Please try again later."
+            )
+        
+        # Process query with enhanced error handling
+        try:
+            response = await rag_service.process_query(request)
+            
+            # Reset DB failure counter on successful operation
+            db_connection_manager.reset_failures()
+            
+            logger.info(f"Query processed successfully, confidence: {response.confidence_score:.3f}")
+            return response
+            
+        except Exception as db_error:
+            # Record database-related failures
+            if "database" in str(db_error).lower() or "connection" in str(db_error).lower():
+                db_connection_manager.record_connection_failure()
+            raise
         
     except HTTPException:
         raise
@@ -46,7 +81,7 @@ async def process_query(request: QueryRequest):
         logger.error(f"Failed to process query: {str(e)}")
         raise HTTPException(
             status_code=500,
-            detail=f"Failed to process query: {str(e)}"
+            detail="An error occurred while processing your query. Please try again."
         )
 
 @router.get("/search")

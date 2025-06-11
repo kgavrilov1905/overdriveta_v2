@@ -245,6 +245,124 @@ class DatabaseManager:
         except Exception as e:
             logger.error(f"Failed to delete document: {str(e)}")
             return False
+    
+    # New methods for medium priority features
+    
+    async def find_document_by_filename(self, filename: str) -> Optional[Dict[str, Any]]:
+        """Find document by filename."""
+        try:
+            client = self._get_client()
+            result = client.table('documents').select('*').eq('file_name', filename).execute()
+            return result.data[0] if result.data else None
+        except Exception as e:
+            logger.error(f"Failed to find document by filename: {str(e)}")
+            return None
+    
+    async def find_document_by_content_hash(self, content_hash: str) -> Optional[Dict[str, Any]]:
+        """Find document by content hash stored in metadata."""
+        try:
+            client = self._get_client()
+            result = client.table('documents').select('*').contains('metadata', {'content_hash': content_hash}).execute()
+            return result.data[0] if result.data else None
+        except Exception as e:
+            logger.error(f"Failed to find document by content hash: {str(e)}")
+            return None
+    
+    async def get_all_document_filenames(self) -> List[Dict[str, Any]]:
+        """Get all document filenames and IDs."""
+        try:
+            client = self._get_client()
+            result = client.table('documents').select('id, file_name, upload_date').execute()
+            return result.data
+        except Exception as e:
+            logger.error(f"Failed to get document filenames: {str(e)}")
+            return []
+    
+    async def get_documents_with_metadata(self) -> List[Dict[str, Any]]:
+        """Get all documents with their metadata."""
+        try:
+            client = self._get_client()
+            result = client.table('documents').select('id, file_name, metadata, file_size, upload_date').execute()
+            return result.data
+        except Exception as e:
+            logger.error(f"Failed to get documents with metadata: {str(e)}")
+            return []
+    
+    async def get_document_by_id(self, document_id: str) -> Optional[Dict[str, Any]]:
+        """Get document by ID (alias for get_document)."""
+        return await self.get_document(document_id)
+    
+    async def update_document_metadata(self, document_id: str, metadata: Dict[str, Any]) -> bool:
+        """Update document metadata."""
+        try:
+            client = self._get_client()
+            # Get existing metadata and merge with new metadata
+            existing_doc = await self.get_document(document_id)
+            if existing_doc:
+                existing_metadata = existing_doc.get('metadata', {})
+                updated_metadata = {**existing_metadata, **metadata}
+                
+                client.table('documents').update({
+                    'metadata': updated_metadata,
+                    'updated_at': 'NOW()'
+                }).eq('id', document_id).execute()
+                
+                logger.info(f"Document metadata updated: {document_id}")
+                return True
+            return False
+        except Exception as e:
+            logger.error(f"Failed to update document metadata: {str(e)}")
+            return False
+    
+    async def text_search(self, search_terms: List[str], max_results: int = 20) -> List[Dict[str, Any]]:
+        """Perform text search on document chunks."""
+        try:
+            client = self._get_client()
+            # Simple text search - in production, you'd use full-text search
+            search_query = ' | '.join(search_terms)  # OR search
+            
+            result = client.table('chunks').select('''
+                id, content, page_number, document_id,
+                documents!inner(id, file_name, title)
+            ''').textSearch('content', search_query).limit(max_results).execute()
+            
+            # Format results to match similarity search format
+            formatted_results = []
+            for chunk in result.data:
+                formatted_results.append({
+                    'chunk_id': chunk['id'],
+                    'document_id': chunk['document_id'],
+                    'content': chunk['content'],
+                    'page_number': chunk['page_number'],
+                    'document_name': chunk['documents']['file_name'],
+                    'similarity_score': 0.8,  # Default score for text matches
+                    'metadata': {}
+                })
+            
+            return formatted_results
+        except Exception as e:
+            logger.error(f"Failed to perform text search: {str(e)}")
+            return []
+    
+    async def count_documents(self) -> int:
+        """Count total documents."""
+        try:
+            client = self._get_client()
+            result = client.table('documents').select('id', count='exact').execute()
+            return result.count if result.count else 0
+        except Exception as e:
+            logger.error(f"Failed to count documents: {str(e)}")
+            return 0
+    
+    async def count_chunks(self) -> int:
+        """Count total chunks."""
+        try:
+            client = self._get_client()
+            result = client.table('chunks').select('id', count='exact').execute()
+            return result.count if result.count else 0
+        except Exception as e:
+            logger.error(f"Failed to count chunks: {str(e)}")
+            return 0
 
 # Global database manager instance
 db_manager = DatabaseManager() 

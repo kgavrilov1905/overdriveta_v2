@@ -33,32 +33,57 @@ async def upload_document(
     file: UploadFile = File(...)
 ):
     """
-    Upload and process a document.
+    Upload and process a document with comprehensive validation and preprocessing.
     
     Args:
-        file: PDF file to upload and process
+        file: Document file to upload and process (PDF, PPTX, DOCX supported)
         background_tasks: FastAPI background tasks for async processing
         
     Returns:
-        Document processing response with status
+        Document processing response with status and validation results
     """
     start_time = time.time()
     
     try:
-        # Validate file type
-        allowed_extensions = ['.pdf', '.pptx', '.ppt']
-        file_extension = '.' + file.filename.lower().split('.')[-1]
-        if file_extension not in allowed_extensions:
+        # Enhanced file validation using security middleware
+        if not file.filename:
             raise HTTPException(
                 status_code=400,
-                detail=f"Only PDF and PowerPoint files are supported. Allowed extensions: {', '.join(allowed_extensions)}"
+                detail="Filename is required"
             )
         
-        # Validate file size (max 50MB)
-        if hasattr(file, 'size') and file.size > 50 * 1024 * 1024:
+        # Read file content for size validation
+        content = await file.read()
+        file_size = len(content)
+        
+        # Comprehensive file validation
+        from security_middleware import input_validator
+        validation_result = input_validator.validate_file_upload(file.filename, file_size)
+        
+        if not validation_result["valid"]:
+            error_details = "; ".join(validation_result["errors"])
             raise HTTPException(
                 status_code=400,
-                detail="File size must be less than 50MB"
+                detail=f"File validation failed: {error_details}"
+            )
+        
+        # Log warnings if any
+        if validation_result["warnings"]:
+            warnings = "; ".join(validation_result["warnings"])
+            logger.warning(f"File upload warnings for {file.filename}: {warnings}")
+        
+        # Check for duplicate documents
+        existing_doc = await check_document_duplication(file.filename, content)
+        if existing_doc:
+            logger.info(f"Duplicate document detected: {file.filename} (existing ID: {existing_doc['id']})")
+            return DocumentProcessingResponse(
+                document_id=existing_doc["id"],
+                file_name=file.filename,
+                chunks_created=existing_doc.get("chunk_count", 0),
+                embeddings_generated=existing_doc.get("embedding_count", 0),
+                processing_time=time.time() - start_time,
+                status="duplicate_found",
+                message=f"Document already exists with ID {existing_doc['id']}"
             )
         
         logger.info(f"Starting document upload: {file.filename}")

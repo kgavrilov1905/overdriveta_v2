@@ -1,52 +1,51 @@
 """
-LLM service for Alberta Perspectives RAG API
-Handles response generation using Google Gemini 2.0 Flash.
+Enhanced LLM service with safety configuration and advanced prompting
+Handles AI model initialization, safety settings, and response generation for Alberta economic research.
 """
 
 import logging
 import google.generativeai as genai
-from typing import List, Dict, Any, Optional
+from typing import Dict, Any, List, Optional
 import time
+import re
+
 from config import settings
+from security_middleware import input_validator, db_connection_manager
 
 logger = logging.getLogger(__name__)
 
 class LLMService:
-    """Handles response generation using Google Gemini 2.0 Flash."""
+    """Enhanced LLM service with safety and advanced prompting capabilities."""
     
     def __init__(self):
-        self.model_name = "gemini-2.0-flash-exp"
-        self.max_tokens = settings.max_tokens
-        self.temperature = settings.temperature
-        self._configure_genai()
+        self.model = None
+        self.safety_settings = None
+        self.generation_config = None
         self._initialize_model()
     
-    def _configure_genai(self):
-        """Configure Google Generative AI with API key."""
-        try:
-            genai.configure(api_key=settings.gemini_api_key)
-            logger.info("Google Generative AI configured successfully for LLM")
-        except Exception as e:
-            logger.error(f"Failed to configure Google Generative AI for LLM: {str(e)}")
-            raise
-    
     def _initialize_model(self):
-        """Initialize the Gemini model with configuration."""
+        """Initialize Gemini model with safety configuration."""
         try:
-            generation_config = genai.types.GenerationConfig(
-                max_output_tokens=self.max_tokens,
-                temperature=self.temperature,
-                top_p=0.8,
-                top_k=40
-            )
+            if not settings.gemini_api_key:
+                logger.error("GEMINI_API_KEY not found in environment variables")
+                return
             
-            safety_settings = [
+            # Validate API key
+            if not input_validator.validate_api_key(settings.gemini_api_key):
+                logger.error("Invalid Gemini API key format")
+                return
+            
+            # Configure the API
+            genai.configure(api_key=settings.gemini_api_key)
+            
+            # Safety settings for production use
+            self.safety_settings = [
                 {
                     "category": "HARM_CATEGORY_HARASSMENT",
                     "threshold": "BLOCK_MEDIUM_AND_ABOVE"
                 },
                 {
-                    "category": "HARM_CATEGORY_HATE_SPEECH",
+                    "category": "HARM_CATEGORY_HATE_SPEECH", 
                     "threshold": "BLOCK_MEDIUM_AND_ABOVE"
                 },
                 {
@@ -59,269 +58,259 @@ class LLMService:
                 }
             ]
             
+            # Generation configuration for consistent, high-quality responses
+            self.generation_config = {
+                "temperature": 0.3,      # Lower temperature for more consistent responses
+                "top_p": 0.8,           # Focused sampling
+                "top_k": 40,            # Limited vocabulary diversity
+                "max_output_tokens": 2048,  # Reasonable response length
+                "candidate_count": 1     # Single response
+            }
+            
+            # Initialize the model
             self.model = genai.GenerativeModel(
-                model_name=self.model_name,
-                generation_config=generation_config,
-                safety_settings=safety_settings
+                model_name="gemini-2.0-flash-exp",  # Latest Gemini model
+                safety_settings=self.safety_settings,
+                generation_config=self.generation_config
             )
             
-            logger.info(f"Initialized {self.model_name} successfully")
+            logger.info("LLM service initialized successfully with safety settings")
             
         except Exception as e:
-            logger.error(f"Failed to initialize Gemini model: {str(e)}")
-            raise
+            logger.error(f"Failed to initialize LLM service: {str(e)}")
+            self.model = None
     
-    def create_rag_prompt(self, query: str, context_chunks: List[Dict[str, Any]]) -> str:
+    def generate_response(self, query: str, search_results: List[Dict[str, Any]]) -> Dict[str, Any]:
         """
-        Create a prompt for RAG response generation.
+        Generate enhanced response using advanced prompting techniques.
         
         Args:
-            query: User query
-            context_chunks: Retrieved context chunks with metadata
+            query: User's question
+            search_results: Relevant document chunks from vector search
             
         Returns:
-            Formatted prompt for the LLM
+            Response with answer, sources, and confidence metrics
         """
-        # Create context section from retrieved chunks
-        context_sections = []
-        for i, chunk in enumerate(context_chunks, 1):
-            source_info = f"Source: {chunk.get('document_name', 'Unknown')}"
-            if chunk.get('page_number'):
-                source_info += f" (Page {chunk['page_number']})"
+        if not self.model:
+            logger.error("LLM model not initialized")
+            return self._create_error_response("AI service not available")
+        
+        try:
+            # Sanitize and validate query
+            sanitized_query = input_validator.sanitize_query(query)
             
-            context_sections.append(f"""
-Context {i}:
-{chunk['content']}
-{source_info}
-Relevance Score: {chunk.get('similarity_score', 0):.3f}
-""")
+            # Build enhanced context from search results
+            context = self._build_enhanced_context(search_results)
+            
+            # Create advanced prompt
+            prompt = self._create_advanced_prompt(sanitized_query, context)
+            
+            # Generate response with retry logic
+            response = self._generate_with_retry(prompt)
+            
+            if not response:
+                return self._create_error_response("Failed to generate response")
+            
+            # Process and validate response
+            processed_response = self._process_response(response, search_results)
+            
+            return processed_response
+            
+        except Exception as e:
+            logger.error(f"Error generating LLM response: {str(e)}")
+            return self._create_error_response(f"Response generation failed: {str(e)}")
+    
+    def _build_enhanced_context(self, search_results: List[Dict[str, Any]]) -> str:
+        """Build rich context from search results with metadata."""
+        if not search_results:
+            return "No relevant documents found."
         
-        context_text = "\n".join(context_sections)
+        context_parts = []
         
-        # Create the complete prompt
-        prompt = f"""You are an AI assistant specialized in Alberta economic research and business insights. You help users understand economic data, business trends, and policy information.
+        # Group results by document for better organization
+        doc_groups = {}
+        for result in search_results:
+            doc_name = result.get('document_name', 'Unknown Document')
+            if doc_name not in doc_groups:
+                doc_groups[doc_name] = []
+            doc_groups[doc_name].append(result)
+        
+        # Build context with document organization
+        for doc_name, results in doc_groups.items():
+            context_parts.append(f"\n=== From {doc_name} ===")
+            
+            for result in results:
+                page_info = f" (Page {result.get('page_number', 'N/A')})" if result.get('page_number') else ""
+                similarity = result.get('similarity_score', 0)
+                
+                context_parts.append(
+                    f"\n[Relevance: {similarity:.0%}]{page_info}\n"
+                    f"{result.get('content', '').strip()}\n"
+                )
+        
+        return "\n".join(context_parts)
+    
+    def _create_advanced_prompt(self, query: str, context: str) -> str:
+        """Create an advanced prompt with specific instructions for Alberta economic research."""
+        
+        prompt = f"""You are an expert assistant specializing in Alberta economic research and policy analysis. You have access to official documents from Alberta Perspectives and related economic research.
 
-RESPONSE FORMAT REQUIREMENTS:
-- Use structured responses with clear bullet points when listing multiple items
-- Format lists with proper bullet points (•)
-- Use clear paragraph breaks between different topics
-- Include subheadings when appropriate
-- Make responses scannable and easy to read
+**CONTEXT DOCUMENTS:**
+{context}
 
-INFORMATION SOURCES:
-1. PRIMARY: Use the provided Alberta Perspectives research context when available
-2. FALLBACK: If the context doesn't have sufficient information, supplement with your general knowledge about Alberta's economy, but clearly distinguish between sourced and general information
+**USER QUESTION:**
+{query}
 
-GUIDELINES:
-- Always prioritize information from the provided context first
-- When using context, cite sources with document names and page numbers
-- If context is insufficient, provide helpful general information about Alberta's economy
-- Use bullet points for lists and multiple items
-- Structure responses with clear paragraphs
-- Be comprehensive but organized
+**INSTRUCTIONS:**
+1. **Accuracy First**: Base your response ONLY on the provided documents. Do not add external information.
 
-CONTEXT INFORMATION:
-{context_text}
+2. **Structure**: Organize your response with clear headers and bullet points:
+   - Use **bold headers** for main topics (e.g., **Tax Reduction**, **Economic Diversification**)
+   - Use bullet points for specific facts and details
+   - Keep each bullet point concise (1-2 sentences)
 
-USER QUESTION: {query}
+3. **Source Attribution**: Reference specific documents but don't include technical citations in the main text.
 
-RESPONSE:
-Please provide a well-structured answer. Use bullet points for lists, clear paragraphs, and cite sources when using the provided context. If the context doesn't cover the topic sufficiently, supplement with general knowledge about Alberta's economy while noting the difference."""
+4. **Confidence**: Only include information you can directly support from the documents.
+
+5. **Alberta Focus**: Emphasize information specific to Alberta's economic context.
+
+6. **Business Relevance**: Highlight practical implications for Alberta businesses when relevant.
+
+**RESPONSE FORMAT:**
+Provide a well-structured response with clear headers and bullet points. Make it easy to scan and understand. Focus on actionable insights and specific data points from the research.
+
+**RESPONSE:**"""
 
         return prompt
     
-    def generate_response(self, query: str, context_chunks: List[Dict[str, Any]]) -> Dict[str, Any]:
-        """
-        Generate a response using the RAG pipeline.
+    def _generate_with_retry(self, prompt: str, max_retries: int = 3) -> Optional[str]:
+        """Generate response with retry logic and error handling."""
+        for attempt in range(max_retries):
+            try:
+                logger.debug(f"Generating response (attempt {attempt + 1}/{max_retries})")
+                
+                response = self.model.generate_content(prompt)
+                
+                # Check if response was blocked by safety filters
+                if response.candidates and response.candidates[0].finish_reason == "SAFETY":
+                    logger.warning("Response blocked by safety filters")
+                    return "I apologize, but I cannot provide a response to this query due to safety considerations. Please try rephrasing your question."
+                
+                # Extract text from response
+                if response.text:
+                    logger.debug(f"Response generated successfully: {len(response.text)} characters")
+                    return response.text.strip()
+                else:
+                    logger.warning("Empty response received from model")
+                    
+            except Exception as e:
+                logger.warning(f"Response generation attempt {attempt + 1} failed: {str(e)}")
+                if attempt < max_retries - 1:
+                    time.sleep(1)  # Brief delay before retry
+                continue
         
-        Args:
-            query: User query
-            context_chunks: Retrieved context chunks
-            
-        Returns:
-            Generated response with metadata
-        """
-        start_time = time.time()
-        
+        return None
+    
+    def _process_response(self, response_text: str, search_results: List[Dict[str, Any]]) -> Dict[str, Any]:
+        """Process and validate the generated response."""
         try:
-            if not context_chunks:
-                return self._generate_fallback_response(query, start_time)
+            # Calculate confidence based on response quality and source coverage
+            confidence = self._calculate_confidence(response_text, search_results)
             
-            # Create the prompt
-            prompt = self.create_rag_prompt(query, context_chunks)
+            # Extract and format sources
+            sources = self._format_sources(search_results)
             
-            logger.info(f"Generating response for query: '{query[:50]}...' with {len(context_chunks)} context chunks")
+            # Clean up response formatting
+            cleaned_response = self._clean_response(response_text)
             
-            # Generate response
-            response = self.model.generate_content(prompt)
-            
-            if not response.text:
-                logger.warning("Model generated empty response")
-                return self._generate_fallback_response(query, start_time)
-            
-            # Calculate confidence based on context quality
-            confidence_score = self._calculate_confidence(context_chunks, response.text)
-            
-            # Prepare sources information
-            sources = self._format_sources(context_chunks)
-            
-            processing_time = time.time() - start_time
-            
-            result = {
-                "response": response.text.strip(),
+            return {
+                "response": cleaned_response,
                 "sources": sources,
-                "confidence_score": confidence_score,
-                "processing_time": processing_time,
-                "model_used": self.model_name,
-                "context_chunks_used": len(context_chunks),
-                "prompt_tokens": len(prompt.split()),  # Approximate
-                "response_tokens": len(response.text.split()),  # Approximate
+                "confidence_score": confidence,
+                "model": "gemini-2.0-flash-exp",
+                "safety_filtered": False
             }
             
-            logger.info(f"Response generated successfully in {processing_time:.2f}s")
-            return result
-            
         except Exception as e:
-            logger.error(f"Failed to generate response: {str(e)}")
-            return self._generate_error_response(query, str(e), start_time)
+            logger.error(f"Error processing response: {str(e)}")
+            return self._create_error_response("Response processing failed")
     
-    def _generate_fallback_response(self, query: str, start_time: float) -> Dict[str, Any]:
-        """Generate a fallback response using general knowledge when no context is available."""
-        
+    def _calculate_confidence(self, response: str, search_results: List[Dict[str, Any]]) -> float:
+        """Calculate confidence score based on response quality and source relevance."""
         try:
-            # Create a fallback prompt for general knowledge about Alberta
-            fallback_prompt = f"""You are an AI assistant with knowledge about Alberta's economy and business environment. 
-
-The user asked: {query}
-
-While I don't have specific Alberta Perspectives research documents to reference for this question, I can provide general information about Alberta's economy and business environment.
-
-RESPONSE FORMAT:
-- Use bullet points for lists
-- Structure with clear paragraphs
-- Be helpful and informative
-- Note that this is general knowledge, not from specific research documents
-
-Please provide a helpful response using your general knowledge about Alberta's economy, business climate, and related topics."""
-
-            response = self.model.generate_content(fallback_prompt)
+            base_confidence = 0.7  # Base confidence
             
-            fallback_text = response.text.strip() if response.text else "I apologize, but I couldn't generate a response for your question."
+            # Factor 1: Response length and detail (reasonable length indicates good coverage)
+            length_factor = min(len(response) / 1000, 1.0) * 0.1
             
-            # Add a note about the source
-            fallback_text += "\n\n*Note: This response is based on general knowledge about Alberta's economy, as no specific research documents were found for your query.*"
+            # Factor 2: Number of high-quality sources
+            high_quality_sources = len([r for r in search_results if r.get('similarity_score', 0) > 0.8])
+            source_factor = min(high_quality_sources / 3, 1.0) * 0.1
+            
+            # Factor 3: Specific data mentions (percentages, numbers, specific terms)
+            data_mentions = len(re.findall(r'\d+%|\$[\d,]+|\d+\.\d+', response))
+            data_factor = min(data_mentions / 5, 1.0) * 0.1
+            
+            total_confidence = base_confidence + length_factor + source_factor + data_factor
+            
+            return min(total_confidence, 0.95)  # Cap at 95%
             
         except Exception as e:
-            logger.error(f"Failed to generate fallback response: {str(e)}")
-            fallback_text = "I apologize, but I encountered an error while trying to answer your question. Please try again or rephrase your query."
-
-        return {
-            "response": fallback_text,
-            "sources": [],
-            "confidence_score": 0.3,  # Higher confidence since we're providing useful info
-            "processing_time": time.time() - start_time,
-            "model_used": self.model_name,
-            "context_chunks_used": 0,
-            "is_fallback": True
-        }
+            logger.warning(f"Error calculating confidence: {str(e)}")
+            return 0.7  # Default confidence
     
-    def _generate_error_response(self, query: str, error: str, start_time: float) -> Dict[str, Any]:
-        """Generate an error response."""
-        error_text = """I'm sorry, but I encountered an error while processing your request. Please try again in a moment, or rephrase your question.
-
-If the problem persists, please contact support."""
-
+    def _format_sources(self, search_results: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """Format source information for response."""
+        formatted_sources = []
+        
+        for result in search_results[:5]:  # Limit to top 5 sources
+            source = {
+                "document_name": result.get('document_name', 'Unknown Document'),
+                "similarity_score": result.get('similarity_score', 0),
+            }
+            
+            if result.get('page_number'):
+                source["page_number"] = result.get('page_number')
+            
+            formatted_sources.append(source)
+        
+        return formatted_sources
+    
+    def _clean_response(self, response: str) -> str:
+        """Clean and format the response text."""
+        # Remove any unwanted formatting artifacts
+        cleaned = response.strip()
+        
+        # Ensure proper line breaks
+        cleaned = re.sub(r'\n{3,}', '\n\n', cleaned)
+        
+        # Remove any remaining citation patterns that might have slipped through
+        cleaned = re.sub(r'\[\d+\]', '', cleaned)
+        cleaned = re.sub(r'\(\w+_\w+_\w+\.pdf[^)]*\)', '', cleaned)
+        
+        return cleaned.strip()
+    
+    def _create_error_response(self, error_message: str) -> Dict[str, Any]:
+        """Create standardized error response."""
         return {
-            "response": error_text,
+            "response": f"I apologize, but I encountered an issue while processing your request. {error_message}",
             "sources": [],
             "confidence_score": 0.0,
-            "processing_time": time.time() - start_time,
-            "model_used": self.model_name,
-            "context_chunks_used": 0,
-            "error": error,
-            "is_error": True
+            "model": "gemini-2.0-flash-exp",
+            "safety_filtered": False,
+            "error": True
         }
     
-    def _calculate_confidence(self, context_chunks: List[Dict[str, Any]], response_text: str) -> float:
-        """
-        Calculate confidence score based on context quality and response characteristics.
-        
-        Args:
-            context_chunks: Retrieved context chunks
-            response_text: Generated response
-            
-        Returns:
-            Confidence score between 0 and 1
-        """
-        if not context_chunks:
-            return 0.1
-        
-        # Base confidence from similarity scores
-        avg_similarity = sum(chunk.get('similarity_score', 0) for chunk in context_chunks) / len(context_chunks)
-        
-        # Adjust based on number of sources
-        source_factor = min(len(context_chunks) / 3, 1.0)  # Optimal around 3 sources
-        
-        # Adjust based on response length (longer responses often indicate more comprehensive answers)
-        response_length_factor = min(len(response_text.split()) / 100, 1.0)
-        
-        # Check if response contains citations (indicates use of provided context)
-        citation_factor = 1.0 if any(chunk.get('document_name', '') in response_text for chunk in context_chunks) else 0.8
-        
-        confidence = (avg_similarity * 0.4 + 
-                     source_factor * 0.3 + 
-                     response_length_factor * 0.2 + 
-                     citation_factor * 0.1)
-        
-        return min(confidence, 1.0)
-    
-    def _format_sources(self, context_chunks: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-        """Format source information for the response."""
-        sources = []
-        seen_documents = set()
-        
-        for chunk in context_chunks:
-            doc_name = chunk.get('document_name', 'Unknown Document')
-            
-            # Create unique source entry per document
-            source_key = f"{doc_name}_{chunk.get('page_number', 'unknown')}"
-            
-            if source_key not in seen_documents:
-                source_info = {
-                    "document_name": doc_name,
-                    "page_number": chunk.get('page_number'),
-                    "similarity_score": chunk.get('similarity_score', 0),
-                    "content_preview": chunk.get('content', '')[:200] + "..." if len(chunk.get('content', '')) > 200 else chunk.get('content', '')
-                }
-                sources.append(source_info)
-                seen_documents.add(source_key)
-        
-        # Sort by similarity score
-        sources.sort(key=lambda x: x['similarity_score'], reverse=True)
-        
-        return sources
-    
-    async def test_connection(self) -> bool:
-        """
-        Test the connection to Gemini 2.0 Flash.
-        
-        Returns:
-            True if connection is successful, False otherwise
-        """
-        try:
-            test_prompt = "Hello, this is a test message. Please respond with 'Test successful'."
-            response = self.model.generate_content(test_prompt)
-            
-            if response.text and "test" in response.text.lower():
-                logger.info("LLM service connection test successful")
-                return True
-            else:
-                logger.error("LLM service connection test failed: Unexpected response")
-                return False
-                
-        except Exception as e:
-            logger.error(f"LLM service connection test failed: {str(e)}")
-            return False
+    def get_model_status(self) -> Dict[str, Any]:
+        """Get current status of the LLM service."""
+        return {
+            "model_initialized": self.model is not None,
+            "model_name": "gemini-2.0-flash-exp" if self.model else None,
+            "safety_settings_enabled": self.safety_settings is not None,
+            "api_key_configured": bool(settings.gemini_api_key),
+            "api_key_valid": input_validator.validate_api_key(settings.gemini_api_key) if settings.gemini_api_key else False
+        }
 
-# Global LLM service instance
+# Global service instance
 llm_service = LLMService() 
