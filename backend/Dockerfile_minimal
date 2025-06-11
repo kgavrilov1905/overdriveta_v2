@@ -1,17 +1,11 @@
-FROM python:3.11-slim
+FROM tiangolo/uvicorn-gunicorn-fastapi:python3.11-slim
 
 WORKDIR /app
 
-# Copy requirements first for better caching
-RUN echo "fastapi==0.115.5" > requirements.txt && \
-    echo "uvicorn==0.32.1" >> requirements.txt
-
-# Install with no cache and upgrade pip efficiently
-RUN pip install --no-cache-dir --upgrade pip && \
-    pip install --no-cache-dir -r requirements.txt
-
-# Copy minimal app
 COPY main_minimal.py main.py
 
-# Use Railway's PORT environment variable
-CMD uvicorn main:app --host 0.0.0.0 --port ${PORT:-8000} 
+# Railway sets PORT env var, use it
+ENV PORT=8000
+EXPOSE $PORT
+
+CMD uvicorn main:app --host 0.0.0.0 --port $PORT 
