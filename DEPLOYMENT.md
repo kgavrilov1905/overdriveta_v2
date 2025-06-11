@@ -10,15 +10,15 @@
 
 ### Backend (Railway)
 ```bash
-GEMINI_API_KEY=AIzaSyBMo6D7Iiv1pWWPPZzLNf57ijwbkwVnB5s
-SUPABASE_URL=https://aaegatfojqyfronbkpgn.supabase.co
-SUPABASE_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFhZWdhdGZvanF5ZnJvbmJrcGduIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTczMzY5NTMxNCwiZXhwIjoyMDQ5MjcxMzE0fQ.LHuLeNBxEtO6wTsKFvZ23pVh0WNMZtT8E7SyTwP9kew
+GEMINI_API_KEY=[your_google_api_key]
+SUPABASE_URL=[your_supabase_url] 
+SUPABASE_KEY=[your_supabase_service_key]
 ENVIRONMENT=production
 ```
 
 ### Frontend (Vercel)
 ```bash
-NEXT_PUBLIC_API_URL=https://overdrivetav2-production-1980.up.railway.app
+NEXT_PUBLIC_API_URL=[your_backend_url]
 ```
 
 ## Deployment Commands

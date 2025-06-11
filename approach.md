@@ -145,12 +145,12 @@ vercel deploy --prod
 ### Environment Variables
 ```bash
 # Backend
-GEMINI_API_KEY=AIzaSyBMo6D7Iiv1pWWPPZzLNf57ijwbkwVnB5s
-SUPABASE_URL=https://aaegatfojqyfronbkpgn.supabase.co
-SUPABASE_KEY=[jwt_token]
+GEMINI_API_KEY=[your_google_api_key]
+SUPABASE_URL=[your_supabase_url]
+SUPABASE_KEY=[your_supabase_service_key]
 
 # Frontend  
-NEXT_PUBLIC_API_URL=https://overdrivetav2-production-1980.up.railway.app
+NEXT_PUBLIC_API_URL=[your_backend_url]
 ```
 
 ## Current Status
